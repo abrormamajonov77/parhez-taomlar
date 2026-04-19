@@ -1,0 +1,1 @@
+# parhez-taomlar
