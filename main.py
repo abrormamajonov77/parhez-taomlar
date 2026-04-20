@@ -11,8 +11,8 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 # --- SOZLAMALAR ---
-BOT_TOKEN = "SIZNING_TOKENINGIZNI_SHU_YERGA_YOZING"
-ADMIN_ID = 123456789  # O'ZINGIZNING ID RAQAMINGIZ
+BOT_TOKEN = "8684077959:AAGyJzIeM3JNjKoGeVX6klA-dPrXd1FjsA0"
+ADMIN_ID = 88808651  # O'ZINGIZNING ID RAQAMINGIZ
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
