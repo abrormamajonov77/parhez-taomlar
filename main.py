@@ -8,26 +8,31 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
 # --- SOZLAMALAR ---
-# DIQQAT: Token va ID ni o'zingiznikiga almashtirishni unutmang!
-BOT_TOKEN = "8684077959:AAGyJzIeM3JNjKoGeVX6klA-dPrXd1FjsA0"
-ADMIN_ID = 88808651  # O'ZINGIZNING TELEGRAM ID RAQAMINGIZNI YOZING
+BOT_TOKEN = "SIZNING_TOKENINGIZNI_SHU_YERGA_YOZING"
+ADMIN_ID = 123456789  # O'ZINGIZNING ID RAQAMINGIZ
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# --- ADMIN TUGMALARI ---
+# --- TUGMALAR ---
 admin_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="➕ Yangi taom qo'shish")],
         [KeyboardButton(text="📋 Menyuni ko'rish")]
-    ],
-    resize_keyboard=True
+    ], resize_keyboard=True
 )
 
-# --- FSM HOLATLAR (Anketa qadamlari) ---
+user_keyboard = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🍽 Bugungi menyu")],
+        [KeyboardButton(text="🛒 Savatcha")]
+    ], resize_keyboard=True
+)
+
+# --- FSM HOLATLAR ---
 class MenuState(StatesGroup):
     photo = State()
     name = State()
@@ -47,7 +52,6 @@ def init_db():
 # --- START KOMANDASI ---
 @dp.message(CommandStart())
 async def cmd_start(message: types.Message):
-    # Mijozni bazaga saqlash
     conn = sqlite3.connect("oshxona.db")
     cursor = conn.cursor()
     cursor.execute("INSERT OR IGNORE INTO users (user_id, username, full_name) VALUES (?, ?, ?)",
@@ -56,54 +60,74 @@ async def cmd_start(message: types.Message):
     conn.close()
 
     if message.from_user.id == ADMIN_ID:
-        await message.answer("Assalomu alaykum, Xo'jayin! ⚙️ Boshqaruv paneliga xush kelibsiz. Nima ish qilamiz?", reply_markup=admin_keyboard)
+        await message.answer("Assalomu alaykum, Xo'jayin! ⚙️ Boshqaruv paneliga xush kelibsiz.", reply_markup=admin_keyboard)
     else:
-        await message.answer(f"Xush kelibsiz, {message.from_user.first_name}! 🥗 Parhez taomlar yetkazib berish xizmatiga marhamat.")
+        await message.answer(f"Xush kelibsiz, {message.from_user.first_name}! 🥗 Parhez taomlar yetkazib berish xizmatiga marhamat. Quyidagi menyudan foydalaning:", reply_markup=user_keyboard)
+
+# ==========================================
+#        MIJOZLAR UCHUN MENYU QISMI
+# ==========================================
+@dp.message(F.text == "🍽 Bugungi menyu")
+async def show_menu_user(message: types.Message):
+    conn = sqlite3.connect("oshxona.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, portion, price, photo_id FROM menu WHERE is_active=1")
+    foods = cursor.fetchall()
+    conn.close()
+
+    if not foods:
+        await message.answer("😕 Hozircha menyu bo'sh. Oshpazlarimiz taom tayyorlashmoqda!")
+        return
+
+    await message.answer("🍽 <b>Bugungi parhez taomlarimiz:</b>", parse_mode="HTML")
+
+    # Bazadagi har bir taomni bittalab mijozga yuborish
+    for food in foods:
+        food_id, name, portion, price, photo_id = food
+        
+        # Har bir taom tagidagi chiroyli "Savatga qo'shish" tugmasi
+        add_cart_btn = InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="🛒 Savatga qo'shish", callback_data=f"add_{food_id}")]]
+        )
+        caption = f"🍲 <b>{name}</b>\n⚖️ Hajmi: {portion}\n💸 Narxi: {price} so'm"
+        await message.answer_photo(photo=photo_id, caption=caption, parse_mode="HTML", reply_markup=add_cart_btn)
 
 # ==========================================
 #        TAOM QO'SHISH JARAYONI (ADMIN)
 # ==========================================
 
-# 1-qadam: Tugma bosilganda
 @dp.message(F.text == "➕ Yangi taom qo'shish")
 async def add_food_start(message: types.Message, state: FSMContext):
-    if message.from_user.id != ADMIN_ID: return # Faqat admin uchun
-    await message.answer("📸 Yaxshi, yangi taom qo'shamiz! \n\nAvval taomning chiroyli rasmini yuboring:")
+    if message.from_user.id != ADMIN_ID: return
+    await message.answer("📸 Avval taomning chiroyli rasmini yuboring:")
     await state.set_state(MenuState.photo)
 
-# 2-qadam: Rasm qabul qilish
 @dp.message(MenuState.photo, F.photo)
 async def add_food_photo(message: types.Message, state: FSMContext):
-    # Rasmning ID sini xotiraga saqlaymiz
     await state.update_data(photo=message.photo[-1].file_id)
-    await message.answer("✍️ Zo'r! Endi taomning nomini yozing (Masalan: Pishib chiqqan tovuq to'shi):")
+    await message.answer("✍️ Taomning nomini yozing:")
     await state.set_state(MenuState.name)
 
-# 3-qadam: Nomini qabul qilish
 @dp.message(MenuState.name)
 async def add_food_name(message: types.Message, state: FSMContext):
     await state.update_data(name=message.text)
-    await message.answer("⚖️ Porsiya hajmini yozing (Masalan: 200 gr yoki 1 porse):")
+    await message.answer("⚖️ Porsiya hajmini yozing:")
     await state.set_state(MenuState.portion)
 
-# 4-qadam: Hajmini qabul qilish
 @dp.message(MenuState.portion)
 async def add_food_portion(message: types.Message, state: FSMContext):
     await state.update_data(portion=message.text)
-    await message.answer("💰 Narxini faqat raqamlarda yozing (Masalan: 25000):")
+    await message.answer("💰 Narxini faqat raqamlarda yozing:")
     await state.set_state(MenuState.price)
 
-# 5-qadam: Narxni qabul qilish va Bazaga saqlash
 @dp.message(MenuState.price)
 async def add_food_price(message: types.Message, state: FSMContext):
     data = await state.get_data()
-    try:
-        price = int(message.text) # Matnni songa aylantiramiz
+    try: price = int(message.text)
     except ValueError:
-        await message.answer("❌ Iltimos, narxni faqat raqamlar bilan yozing (so'z qo'shmang)!")
+        await message.answer("❌ Narxni faqat raqamlar bilan yozing!")
         return
 
-    # Bazaga yozamiz
     conn = sqlite3.connect("oshxona.db")
     cursor = conn.cursor()
     cursor.execute("INSERT INTO menu (name, portion, price, photo_id) VALUES (?, ?, ?, ?)",
@@ -111,8 +135,8 @@ async def add_food_price(message: types.Message, state: FSMContext):
     conn.commit()
     conn.close()
 
-    await message.answer(f"✅ Taom menyuga muvaffaqiyatli qo'shildi!\n\n🍽 Nom: {data['name']}\n⚖️ Hajm: {data['portion']}\n💸 Narx: {price} so'm")
-    await state.clear() # Anketani tozalaymiz
+    await message.answer(f"✅ Taom menyuga muvaffaqiyatli qo'shildi!\n\n🍽 Nom: {data['name']}\n💸 Narx: {price} so'm")
+    await state.clear()
 
 # --- BOTNI ISHGA TUSHIRISH ---
 async def main():
